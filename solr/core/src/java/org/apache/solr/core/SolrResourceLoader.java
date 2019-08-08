@@ -16,6 +16,10 @@
  */
 package org.apache.solr.core;
 
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.naming.NamingException;
+import javax.naming.NoInitialContextException;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -47,10 +51,6 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import javax.naming.Context;
-import javax.naming.InitialContext;
-import javax.naming.NamingException;
-import javax.naming.NoInitialContextException;
 
 import org.apache.lucene.analysis.WordlistLoader;
 import org.apache.lucene.analysis.util.CharFilterFactory;
@@ -88,9 +88,9 @@ public class SolrResourceLoader implements ResourceLoader,Closeable
   static final String project = "solr";
   static final String base = "org.apache" + "." + project;
   static final String[] packages = {
-      "", "analysis.", "schema.", "handler.", "search.", "update.", "core.", "response.", "request.",
+      "", "analysis.", "schema.", "handler.", "handler.tagger.", "search.", "update.", "core.", "response.", "request.",
       "update.processor.", "util.", "spelling.", "handler.component.", "handler.dataimport.",
-      "spelling.suggest.", "spelling.suggest.fst.", "rest.schema.analysis.", "security.","handler.admin.",
+      "spelling.suggest.", "spelling.suggest.fst.", "rest.schema.analysis.", "security.", "handler.admin.",
       "cloud.autoscaling."
   };
   private static final java.lang.String SOLR_CORE_NAME = "solr.core.name";
@@ -799,6 +799,32 @@ public class SolrResourceLoader implements ResourceLoader,Closeable
       logOnceInfo("home_default", project + " home defaulted to '" + home + "' (could not find system property or JNDI)");
     }
     return Paths.get(home);
+  }
+
+  /**
+   * Solr allows users to store arbitrary files in a special directory located directly under SOLR_HOME.
+   *
+   * This directory is generally created by each node on startup.  Files located in this directory can then be
+   * manipulated using select Solr features (e.g. streaming expressions).
+   */
+  public static final String USER_FILES_DIRECTORY = "userfiles";
+  public static void ensureUserFilesDataDir(Path solrHome) {
+    final Path userFilesPath = getUserFilesPath(solrHome);
+    final File userFilesDirectory = new File(userFilesPath.toString());
+    if (! userFilesDirectory.exists()) {
+      try {
+        final boolean created = userFilesDirectory.mkdir();
+        if (! created) {
+          log.warn("Unable to create [{}] directory in SOLR_HOME [{}].  Features requiring this directory may fail.", USER_FILES_DIRECTORY, solrHome);
+        }
+      } catch (Exception e) {
+          log.warn("Unable to create [" + USER_FILES_DIRECTORY + "] directory in SOLR_HOME [" + solrHome + "].  Features requiring this directory may fail.", e);
+      }
+    }
+  }
+
+  public static Path getUserFilesPath(Path solrHome) {
+    return Paths.get(solrHome.toAbsolutePath().toString(), USER_FILES_DIRECTORY).toAbsolutePath();
   }
 
   // Logs a message only once per startup

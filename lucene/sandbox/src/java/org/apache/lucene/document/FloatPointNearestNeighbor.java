@@ -29,6 +29,7 @@ import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopFieldDocs;
+import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.bkd.BKDReader;
@@ -189,7 +190,19 @@ public class FloatPointNearestNeighbor {
 
     @Override
     public PointValues.Relation compare(byte[] minPackedValue, byte[] maxPackedValue) {
-      throw new AssertionError();
+      for (int d = 0, offset = 0; d < dims; ++d, offset += Float.BYTES) {
+        float cellMaxAtDim = FloatPoint.decodeDimension(maxPackedValue, offset);
+        if (cellMaxAtDim < min[d]) {
+          // System.out.println("  skipped because cell max at " + d + " (" + cellMaxAtDim + ") < visitor.min[" + d + "] (" + min[d] + ")");
+          return PointValues.Relation.CELL_OUTSIDE_QUERY;
+        }
+        float cellMinAtDim = FloatPoint.decodeDimension(minPackedValue, offset);
+        if (cellMinAtDim > max[d]) {
+          // System.out.println("  skipped because cell min at " + d + " (" + cellMinAtDim + ") > visitor.max[" + d + "] (" + max[d] + ")");
+          return PointValues.Relation.CELL_OUTSIDE_QUERY;
+        }
+      }
+      return PointValues.Relation.CELL_CROSSES_QUERY;
     }
   }
 
@@ -242,7 +255,7 @@ public class FloatPointNearestNeighbor {
           approxBestDistanceSquared(minPackedValue, maxPackedValue, origin)));
     }
 
-    LOOP_OVER_CELLS: while (cellQueue.size() > 0) {
+    while (cellQueue.size() > 0) {
       Cell cell = cellQueue.poll();
       // System.out.println("  visit " + cell);
 
@@ -261,20 +274,9 @@ public class FloatPointNearestNeighbor {
         // Non-leaf block: split into two cells and put them back into the queue:
 
         if (hitQueue.size() == topN) {
-          for (int d = 0, offset = 0; d < visitor.dims; ++d, offset += Float.BYTES) {
-            float cellMaxAtDim = FloatPoint.decodeDimension(cell.maxPacked, offset);
-            float cellMinAtDim = FloatPoint.decodeDimension(cell.minPacked, offset);
-            if (cellMaxAtDim < visitor.min[d] || cellMinAtDim > visitor.max[d]) {
-              // this cell is outside our search radius; don't bother exploring any more
-
-              // if (cellMaxAtDim < visitor.min[d]) {
-              //   System.out.println("  skipped because cell max at " + d + " (" + cellMaxAtDim + ") < visitor.min[" + d + "] (" + visitor.min[d] + ")");
-              // } else {
-              //   System.out.println("  skipped because cell min at " + d + " (" + cellMinAtDim + ") > visitor.max[" + d + "] (" + visitor.max[d] + ")");
-              // }
-
-              continue LOOP_OVER_CELLS;
-            }
+          if (visitor.compare(cell.minPacked, cell.maxPacked) == PointValues.Relation.CELL_OUTSIDE_QUERY) {
+            // this cell is outside our search radius; don't bother exploring any more
+            continue;
           }
         }
         BytesRef splitValue = BytesRef.deepCopyOf(cell.index.getSplitDimValue());
@@ -378,6 +380,6 @@ public class FloatPointNearestNeighbor {
       NearestHit hit = hits[i];
       scoreDocs[i] = new FieldDoc(hit.docID, 0.0f, new Object[] { (float)Math.sqrt(hit.distanceSquared) });
     }
-    return new TopFieldDocs(totalHits, scoreDocs, null, 0.0f);
+    return new TopFieldDocs(new TotalHits(totalHits, TotalHits.Relation.EQUAL_TO), scoreDocs, null);
   }
 }

@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.OutputStreamWriter;
 import java.lang.invoke.MethodHandles;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Properties;
 import java.util.SortedMap;
@@ -53,7 +54,7 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
   public static SolrClient client = null;
   public static String context;
 
-  public static JettySolrRunner createJetty(String solrHome, String configFile, String schemaFile, String context,
+  public static JettySolrRunner createAndStartJetty(String solrHome, String configFile, String schemaFile, String context,
                                             boolean stopAtShutdown, SortedMap<ServletHolder,String> extraServlets) 
       throws Exception { 
     // creates the data dir
@@ -65,7 +66,7 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
         .setContext(context)
         .stopAtShutdown(stopAtShutdown)
         .withServlets(extraServlets)
-        .withSSLConfig(sslConfig)
+        .withSSLConfig(sslConfig.buildServerSSLConfig())
         .build();
 
     Properties nodeProps = new Properties();
@@ -77,22 +78,22 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
       nodeProps.setProperty("solr.data.dir", createTempDir().toFile().getCanonicalPath());
     }
 
-    return createJetty(solrHome, nodeProps, jettyConfig);
+    return createAndStartJetty(solrHome, nodeProps, jettyConfig);
   }
 
-  public static JettySolrRunner createJetty(String solrHome, String configFile, String context) throws Exception {
-    return createJetty(solrHome, configFile, null, context, true, null);
+  public static JettySolrRunner createAndStartJetty(String solrHome, String configFile, String context) throws Exception {
+    return createAndStartJetty(solrHome, configFile, null, context, true, null);
   }
 
-  public static JettySolrRunner createJetty(String solrHome, JettyConfig jettyConfig) throws Exception {
-    return createJetty(solrHome, new Properties(), jettyConfig);
+  public static JettySolrRunner createAndStartJetty(String solrHome, JettyConfig jettyConfig) throws Exception {
+    return createAndStartJetty(solrHome, new Properties(), jettyConfig);
   }
 
-  public static JettySolrRunner createJetty(String solrHome) throws Exception {
-    return createJetty(solrHome, new Properties(), JettyConfig.builder().withSSLConfig(sslConfig).build());
+  public static JettySolrRunner createAndStartJetty(String solrHome) throws Exception {
+    return createAndStartJetty(solrHome, new Properties(), JettyConfig.builder().withSSLConfig(sslConfig.buildServerSSLConfig()).build());
   }
 
-  public static JettySolrRunner createJetty(String solrHome, Properties nodeProperties, JettyConfig jettyConfig) throws Exception {
+  public static JettySolrRunner createAndStartJetty(String solrHome, Properties nodeProperties, JettyConfig jettyConfig) throws Exception {
 
     initCore(null, null, solrHome);
 
@@ -118,7 +119,7 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
   }
 
   @After
-  public void afterClass() throws Exception {
+  public synchronized void afterClass() throws Exception {
     if (client != null) client.close();
     client = null;
   }
@@ -132,13 +133,11 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
   }
 
 
-  public SolrClient getSolrClient() {
-    {
-      if (client == null) {
-        client = createNewSolrClient();
-      }
-      return client;
+  public synchronized SolrClient getSolrClient() {
+    if (client == null) {
+      client = createNewSolrClient();
     }
+    return client;
   }
 
   /**
@@ -205,7 +204,8 @@ abstract public class SolrJettyTestBase extends SolrTestCaseJ4
       props.setProperty("name", "collection1");
       OutputStreamWriter writer = null;
       try {
-        writer = new OutputStreamWriter(FileUtils.openOutputStream(new File(collection1Dir, "core.properties")), "UTF-8");
+        writer = new OutputStreamWriter(FileUtils.openOutputStream(
+            new File(collection1Dir, "core.properties")), StandardCharsets.UTF_8);
         props.store(writer, null);
       } finally {
         if (writer != null) {

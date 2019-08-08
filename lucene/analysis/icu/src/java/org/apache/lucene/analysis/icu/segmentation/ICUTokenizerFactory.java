@@ -72,8 +72,15 @@ import com.ibm.icu.text.RuleBasedBreakIterator;
  *                rulefiles="Latn:my.Latin.rules.rbbi,Cyrl:my.Cyrillic.rules.rbbi"/&gt;
  *   &lt;/analyzer&gt;
  * &lt;/fieldType&gt;</pre>
+ *
+ * @since 3.1
+ * @lucene.spi {@value #NAME}
  */
 public class ICUTokenizerFactory extends TokenizerFactory implements ResourceLoaderAware {
+
+  /** SPI name */
+  public static final String NAME = "icu";
+
   static final String RULEFILES = "rulefiles";
   private final Map<Integer,String> tailored;
   private ICUTokenizerConfig config;
@@ -116,9 +123,9 @@ public class ICUTokenizerFactory extends TokenizerFactory implements ResourceLoa
       config = new DefaultICUTokenizerConfig(cjkAsWords, myanmarAsWords) {
         
         @Override
-        public BreakIterator getBreakIterator(int script) {
+        public RuleBasedBreakIterator getBreakIterator(int script) {
           if (breakers[script] != null) {
-            return (BreakIterator) breakers[script].clone();
+            return (RuleBasedBreakIterator) breakers[script].clone();
           } else {
             return super.getBreakIterator(script);
           }
